@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>银河战机 - 80年代街机</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:'Courier New',monospace;overflow:hidden}
+        .game-container{position:relative;border:4px solid #00ff00;box-shadow:0 0 20px #00ff00,inset 0 0 10px #00ff00;border-radius:4px}
+        #gameCanvas{display:block;background:#000}
+        .ui-text{position:absolute;color:#00ff00;font-size:18px;text-shadow:2px 2px 0 #ff00ff;padding:5px 10px;background:rgba(0,0,0,0.7);border:2px solid #00ff00}
+        #score{top:10px;left:10px}
+        #controls{bottom:10px;left:10px;font-size:14px}
+        #gameOver{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ff0000;font-size:40px;font-weight:bold;text-shadow:3px 3px 0 #ffff00;display:none;text-align:center;background:rgba(0,0,0,0.9);padding:20px;border:4px solid #ff0000}
+        #startBtn{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#000;color:#00ff00;border:3px solid #00ff00;padding:15px 30px;font-size:24px;font-family:'Courier New',monospace;cursor:pointer;text-shadow:2px 2px 0 #ff00ff;box-shadow:0 0 10px #00ff00;transition:all .2s}
+        #startBtn:hover{background:#00ff00;color:#000;box-shadow:0 0 20px #00ff00}
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="480" height="640"></canvas>
+        <div class="ui-text" id="score">分数: 0</div>
+        <div class="ui-text" id="controls">←→移动 | 空格射击</div>
+        <div id="gameOver">GAME OVER<br>点击重新开始</div>
+        <button id="startBtn">开始游戏</button>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('gameCanvas');
+        const ctx=canvas.getContext('2d');
+        const scoreElement=document.getElementById('score');
+        const gameOverElement=document.getElementById('gameOver');
+        const startBtn=document.getElementById('startBtn');
+
+        let gameStarted=false;
+        let gameOver=false;
+        let score=0;
+
+        // 玩家飞船（像素飞船形状）
+        const player={x:canvas.width/2-15,y:canvas.height-60,width:30,height:40,speed:5,color:'#00ff00'};
+        let bullets=[];
+        let enemies=[];
+        let stars=[];
+
+        // 初始化星空
+        function initStars(){
+            for(let i=0;i<100;i++){
+                stars.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,size:Math.random()*2+1,speed:Math.random()*2+1})
+            }
+        }
+
+        // 绘制星空
+        function drawStars(){
+            ctx.fillStyle='#fff';
+            stars.forEach(star=>{
+                ctx.fillRect(star.x,star.y,star.size,star.size);
+                star.y+=star.speed;
+                if(star.y>canvas.height){star.y=0;star.x=Math.random()*canvas.width}
+            })
+        }
+
+        // 绘制像素飞船形状
+        function drawPlayer(){
+            ctx.fillStyle=player.color;
+            // 左翼
+            ctx.fillRect(player.x,player.y+15,10,20);
+            // 主体
+            ctx.fillRect(player.x+10,player.y,10,40);
+            // 右翼
+            ctx.fillRect(player.x+20,player.y+15,10,20);
+            // 驾驶舱
+            ctx.fillStyle='#ffff00';
+            ctx.fillRect(player.x+12,player.y+10,6,6);
+        }
+
+        // 移动玩家
+        function movePlayer(direction){
+            if(direction==='left'&&player.x>0)player.x-=player.speed;
+            if(direction==='right'&&player.x<canvas.width-player.width)player.x+=player.speed;
+        }
+
+        // 发射子弹
+        function createBullet(){
+            bullets.push({x:player.x+player.width/2-2,y:player.y,width:4,height:10,speed:8,color:'#ff00ff'});
+            playSound(440,0.1);
+        }
+
+        function drawBullets(){
+            bullets.forEach((bullet,index)=>{
+                ctx.fillStyle=bullet.color;
+                ctx.fillRect(bullet.x,bullet.y,bullet.width,bullet.height);
+                bullet.y-=bullet.speed;
+                if(bullet.y<0)bullets.splice(index,1);
+            })
+        }
+
+        // 敌人防重叠检测
+        function isPositionOverlap(x,y,width,height){
+            for(let enemy of enemies){
+                if(x<enemy.x+enemy.width&&x+width>enemy.x&&y<enemy.y+enemy.height&&y+height>enemy.y)return true;
+            }
+            return false;
+        }
+
+        // 创建敌人（不重叠）
+        function createEnemy(){
+            if(!gameStarted||gameOver)return;
+            let attempts=0;
+            let x,y;
+            do{
+                x=Math.random()*(canvas.width-25);
+                y=-30;
+                attempts++;
+            }while(attempts<10&&isPositionOverlap(x,y,25,25));
+            
+            enemies.push({x,y,width:25,height:25,speed:Math.random()*2+2,color:'#ff0000'});
+        }
+
+        // 绘制敌人
+        function drawEnemies(){
+            enemies.forEach((enemy,index)=>{
+                ctx.fillStyle=enemy.color;
+                ctx.fillRect(enemy.x,enemy.y,enemy.width,enemy.height);
+                ctx.fillStyle='#ffff00';
+                ctx.fillRect(enemy.x+5,enemy.y+5,5,5);
+                ctx.fillRect(enemy.x+15,enemy.y+5,5,5);
+                
+                enemy.y+=enemy.speed;
+
+                if(enemy.y>canvas.height){gameOver=true;gameOverElement.style.display='block';playSound(150,0.5)}
+
+                // 子弹碰撞
+                bullets.forEach((bullet,bIndex)=>{
+                    if(bullet.x<enemy.x+enemy.width&&bullet.x+bullet.width>enemy.x&&bullet.y<enemy.y+enemy.height&&bullet.y+bullet.height>enemy.y){
+                        enemies.splice(index,1);
+                        bullets.splice(bIndex,1);
+                        score+=10;
+                        scoreElement.textContent=`分数: ${score}`;
+                        playSound(660,0.2);
+                    }
+                })
+
+                // 玩家碰撞
+                if(player.x<enemy.x+enemy.width&&player.x+player.width>enemy.x&&player.y<enemy.y+enemy.height&&player.y+player.height>enemy.y){
+                    gameOver=true;gameOverElement.style.display='block';playSound(150,0.5);
+                }
+            })
+        }
+
+        // 复古音效
+        function playSound(frequency,duration){
+            const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+            const oscillator=audioCtx.createOscillator();
+            const gain=audioCtx.createGain();
+            oscillator.type='square';
+            oscillator.frequency.setValueAtTime(frequency,audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1,audioCtx.currentTime);
+            oscillator.connect(gain);
+            gain.connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime+duration);
+        }
+
+        // 键盘控制
+        let keys={};
+        document.addEventListener('keydown',e=>{
+            keys[e.key]=true;
+            if(e.code==='Space'&&gameStarted&&!gameOver){e.preventDefault();createBullet()}
+        });
+        document.addEventListener('keyup',e=>keys[e.key]=false);
+
+        function handleInput(){
+            if(keys['ArrowLeft'])movePlayer('left');
+            if(keys['ArrowRight'])movePlayer('right');
+        }
+
+        // 游戏循环
+        function gameLoop(){
+            ctx.fillStyle='#000';
+            ctx.fillRect(0,0,canvas.width,canvas.height);
+            if(!gameOver){drawStars();handleInput();drawPlayer();drawBullets();drawEnemies()}
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 重置游戏
+        function resetGame(){
+            gameOver=false;score=0;scoreElement.textContent=`分数: 0`;
+            player.x=canvas.width/2-15;bullets=[];enemies=[];
+            gameOverElement.style.display='none';
+        }
+
+        // 开始游戏
+        startBtn.addEventListener('click',()=>{
+            if(!gameStarted){
+                gameStarted=true;startBtn.style.display='none';
+                initStars();setInterval(createEnemy,1000);
+            }else if(gameOver)resetGame();
+        });
+
+        gameOverElement.addEventListener('click',resetGame);
+        gameLoop();
+    </script>
+</body>
+</html>
